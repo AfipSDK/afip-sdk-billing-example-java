@@ -3,6 +3,8 @@
 Ejemplo de facturacion electronica con [Afip SDK](https://afipsdk.com/) usando Java.
 Genera **Facturas B** a traves de los web services de AFIP usando el paquete Maven oficial de AfipSDK y devuelve un PDF de la factura generada.
 
+<img width="1283" height="840" alt="image" src="https://github.com/user-attachments/assets/4ccc86be-1a54-4bd2-8f20-36ee24b5b0bc" />
+
 ## Que hace
 
 - Expone un endpoint `POST /bill` que recibe los datos de una factura.
