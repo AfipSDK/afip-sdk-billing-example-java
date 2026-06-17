@@ -14,11 +14,9 @@ import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -29,7 +27,6 @@ import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
@@ -42,7 +39,6 @@ public final class App {
     }
 
     public static void main(String[] args) throws IOException {
-        loadDotEnv();
         checkEnvs();
 
         int port = getPort();
@@ -58,7 +54,7 @@ public final class App {
     }
 
     private static int getPort() {
-        String port = env("PORT");
+        String port = System.getenv("PORT");
         if (port == null || port.trim().isEmpty()) {
             return DEFAULT_PORT;
         }
@@ -67,16 +63,16 @@ public final class App {
 
     private static AfipOptions createAfipOptions() throws IOException {
         AfipOptions options = new AfipOptions();
-        options.setCuit(env("AFIP_CUIT"));
-        options.setAccessToken(env("AFIP_ACCESS_TOKEN"));
-        options.setProduction("true".equalsIgnoreCase(env("AFIP_PRODUCTION")));
+        options.setAccessToken(System.getenv("AFIP_TOKEN"));
+        options.setCuit(System.getenv("AFIP_CUIT"));
+        options.setProduction(false);
 
-        String certPath = env("AFIP_CERT_PATH");
+        String certPath = System.getenv("AFIP_CERT_PATH");
         if (certPath != null && !certPath.trim().isEmpty()) {
             options.setCert(readFile(certPath));
         }
 
-        String keyPath = env("AFIP_KEY_PATH");
+        String keyPath = System.getenv("AFIP_KEY_PATH");
         if (keyPath != null && !keyPath.trim().isEmpty()) {
             options.setKey(readFile(keyPath));
         }
@@ -90,11 +86,11 @@ public final class App {
     }
 
     private static void checkEnvs() {
-        boolean hasCertPath = hasText(env("AFIP_CERT_PATH"));
-        boolean hasKeyPath = hasText(env("AFIP_KEY_PATH"));
+        boolean hasCertPath = hasText(System.getenv("AFIP_CERT_PATH"));
+        boolean hasKeyPath = hasText(System.getenv("AFIP_KEY_PATH"));
 
-        if (!hasText(env("AFIP_CUIT")) ||
-            !hasText(env("AFIP_ACCESS_TOKEN")) ||
+        if (!hasText(System.getenv("AFIP_CUIT")) ||
+            !hasText(System.getenv("AFIP_TOKEN")) ||
             hasCertPath != hasKeyPath) {
             System.err.println("ERROR: Falta configurar variables de ambiente revise el README para mas informacion.");
             System.exit(1);
@@ -103,47 +99,6 @@ public final class App {
 
     private static boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
-    }
-
-    private static void loadDotEnv() throws IOException {
-        File file = new File(".env");
-        if (!file.exists()) {
-            return;
-        }
-
-        List<String> lines = Files.readAllLines(file.toPath(), StandardCharsets.UTF_8);
-        for (String rawLine : lines) {
-            String line = rawLine.trim();
-            if (line.isEmpty() || line.startsWith("#")) {
-                continue;
-            }
-
-            int separatorIndex = line.indexOf('=');
-            if (separatorIndex <= 0) {
-                continue;
-            }
-
-            String key = line.substring(0, separatorIndex).trim();
-            String value = line.substring(separatorIndex + 1).trim();
-            if (value.startsWith("\"") && value.endsWith("\"") && value.length() >= 2) {
-                value = value.substring(1, value.length() - 1);
-            }
-
-            setEnvIfMissing(key, value);
-        }
-    }
-
-    private static void setEnvIfMissing(String key, String value) {
-        if (System.getenv(key) != null) {
-            return;
-        }
-
-        System.setProperty(key, value);
-    }
-
-    private static String env(String key) {
-        String value = System.getenv(key);
-        return value != null ? value : System.getProperty(key);
     }
 
     private static final class BillHandler implements HttpHandler {
@@ -156,39 +111,31 @@ public final class App {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
-                sendJson(exchange, 405, new ErrorResponse("Metodo no permitido."));
+                sendJson(exchange, 405, error("Metodo no permitido."));
                 return;
             }
 
             try {
                 BillRequest request = GSON.fromJson(readBody(exchange), BillRequest.class);
                 if (request == null) {
-                    sendJson(exchange, 400, new ErrorResponse("Request invalido."));
+                    sendJson(exchange, 400, error("Request invalido."));
                     return;
                 }
 
                 sendJson(exchange, 200, createBill(request));
-            } catch (JsonSyntaxException e) {
-                sendJson(exchange, 400, new ErrorResponse("JSON invalido."));
-            } catch (AfipException e) {
-                sendJson(exchange, 400, new ErrorResponse(e.getMessage()));
             } catch (Exception e) {
-                sendJson(exchange, 500, new ErrorResponse(e.getMessage()));
+                int statusCode = e instanceof JsonSyntaxException || e instanceof AfipException ? 400 : 500;
+                String message = e instanceof JsonSyntaxException ? "JSON invalido." : e.getMessage();
+                sendJson(exchange, statusCode, error(message));
             }
         }
 
-        private PdfResponse createBill(BillRequest request) {
+        private CreatePDFResponse createBill(BillRequest request) {
             int tipoDeFactura = 6; // Factura B
             int lastVoucher = afip.electronicBilling().getLastVoucher(request.puntoDeVenta, tipoDeFactura);
-            Map<String, Object> voucherInfo = lastVoucher > 0
-                ? afip.electronicBilling().getVoucherInfo(lastVoucher, request.puntoDeVenta, tipoDeFactura)
-                : null;
-
             int numeroDeFactura = lastVoucher + 1;
-            BigDecimal importeTotal = request.importeGravado
-                .add(request.importeIva)
-                .add(request.importeExentoIva);
-            int fecha = Math.max(getMapInt(voucherInfo, "CbteFch", 0), getTodayAsNumber());
+            int fecha = getTodayAsNumber();
+            double importeTotal = request.importeGravado + request.importeIva + request.importeExentoIva;
 
             Map<String, Object> alicuota = new HashMap<String, Object>();
             alicuota.put("Id", 5);
@@ -205,41 +152,45 @@ public final class App {
             voucherData.put("CbteDesde", numeroDeFactura);
             voucherData.put("CbteHasta", numeroDeFactura);
             voucherData.put("CbteFch", fecha);
-            voucherData.put("FchServDesde", request.fechaServicioDesde);
-            voucherData.put("FchServHasta", request.fechaServicioHasta);
-            voucherData.put("FchVtoPago", request.fechaVencimientoPago);
             voucherData.put("ImpTotal", importeTotal);
-            voucherData.put("ImpTotConc", BigDecimal.ZERO);
+            voucherData.put("ImpTotConc", 0);
             voucherData.put("ImpNeto", request.importeGravado);
             voucherData.put("ImpOpEx", request.importeExentoIva);
             voucherData.put("ImpIVA", request.importeIva);
-            voucherData.put("ImpTrib", BigDecimal.ZERO);
+            voucherData.put("ImpTrib", 0);
             voucherData.put("MonId", "PES");
             voucherData.put("MonCotiz", 1);
             voucherData.put("CondicionIVAReceptorId", request.condicionIvaReceptor);
             voucherData.put("Iva", Arrays.asList(alicuota));
 
+            if (request.concepto == 2 || request.concepto == 3) {
+                voucherData.put("FchServDesde", request.fechaServicioDesde);
+                voucherData.put("FchServHasta", request.fechaServicioHasta);
+                voucherData.put("FchVtoPago", request.fechaVencimientoPago);
+            }
+
             Map<String, Object> billResponse = afip.electronicBilling().createVoucher(voucherData);
-            CreatePDFResponse pdfResponse = afip.electronicBilling().createPDF(createPdfRequest(
+            Object cae = billResponse.get("CAE");
+            Object caeVencimiento = billResponse.get("CAEFchVto");
+
+            return afip.electronicBilling().createPDF(createPdfRequest(
                 request,
                 numeroDeFactura,
                 fecha,
                 importeTotal,
-                stringValue(billResponse.get("CAE")),
-                stringValue(billResponse.get("CAEFchVto"))
+                cae != null ? cae.toString() : "",
+                caeVencimiento != null ? caeVencimiento.toString() : ""
             ));
-
-            return new PdfResponse(pdfResponse.getFile(), pdfResponse.getFileName());
         }
 
         private CreatePDFRequest createPdfRequest(
             BillRequest request,
             int numeroDeFactura,
             int fecha,
-            BigDecimal importeTotal,
+            double importeTotal,
             String cae,
             String caeVencimiento) {
-            String cuit = env("AFIP_CUIT");
+            String cuit = System.getenv("AFIP_CUIT");
             Object issuerCuit = parseLongOrString(cuit);
             String parsedDate = formatDateNumber(fecha);
 
@@ -289,7 +240,7 @@ public final class App {
             return pdfRequest;
         }
 
-        private Map<String, Object> createItem(BigDecimal importeTotal) {
+        private Map<String, Object> createItem(double importeTotal) {
             Map<String, Object> item = new HashMap<String, Object>();
             item.put("code", "001");
             item.put("description", "Servicio");
@@ -311,7 +262,7 @@ public final class App {
         public void handle(HttpExchange exchange) throws IOException {
             if (!"GET".equalsIgnoreCase(exchange.getRequestMethod()) &&
                 !"HEAD".equalsIgnoreCase(exchange.getRequestMethod())) {
-                sendJson(exchange, 405, new ErrorResponse("Metodo no permitido."));
+                sendJson(exchange, 405, error("Metodo no permitido."));
                 return;
             }
 
@@ -395,18 +346,6 @@ public final class App {
         return parts.length == 3 ? parts[2] + "/" + parts[1] + "/" + parts[0] : isoDate;
     }
 
-    private static int getMapInt(Map<String, Object> data, String key, int defaultValue) {
-        if (data == null || !data.containsKey(key) || data.get(key) == null) {
-            return defaultValue;
-        }
-
-        Object value = data.get(key);
-        if (value instanceof Number) {
-            return ((Number) value).intValue();
-        }
-        return Integer.parseInt(value.toString());
-    }
-
     private static Object parseLongOrString(String value) {
         try {
             return Long.parseLong(value);
@@ -415,8 +354,10 @@ public final class App {
         }
     }
 
-    private static String stringValue(Object value) {
-        return value == null ? "" : value.toString();
+    private static Map<String, Object> error(String message) {
+        Map<String, Object> error = new HashMap<String, Object>();
+        error.put("message", message);
+        return error;
     }
 
     private static final class BillRequest {
@@ -427,13 +368,13 @@ public final class App {
         private int tipoDeDocumento;
 
         @SerializedName("importe_gravado")
-        private BigDecimal importeGravado = BigDecimal.ZERO;
+        private double importeGravado;
 
         @SerializedName("importe_exento_iva")
-        private BigDecimal importeExentoIva = BigDecimal.ZERO;
+        private double importeExentoIva;
 
         @SerializedName("importe_iva")
-        private BigDecimal importeIva = BigDecimal.ZERO;
+        private double importeIva;
 
         @SerializedName("punto_de_venta")
         private int puntoDeVenta;
@@ -452,25 +393,5 @@ public final class App {
 
         @SerializedName("fecha_vencimiento_pago")
         private Integer fechaVencimientoPago;
-    }
-
-    private static final class PdfResponse {
-        private final String file;
-
-        @SerializedName("file_name")
-        private final String fileName;
-
-        private PdfResponse(String file, String fileName) {
-            this.file = file;
-            this.fileName = fileName;
-        }
-    }
-
-    private static final class ErrorResponse {
-        private final String message;
-
-        private ErrorResponse(String message) {
-            this.message = message;
-        }
     }
 }

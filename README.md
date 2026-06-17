@@ -25,14 +25,17 @@ Si se usa el cuit `20409378472`, el certificado y key no son necesarios.
 
 ## Configuracion
 
-Copiar el archivo de ejemplo y completar las variables:
+Copiar el archivo de ejemplo, completar las variables y cargarlas en la shell:
 
 ```bash
 cp .env.example .env
+set -a
+. ./.env
+set +a
 ```
 
 ```env
-AFIP_ACCESS_TOKEN=tu_access_token
+AFIP_TOKEN=tu_access_token
 AFIP_CUIT=20409378472
 
 # Agregar estos envs si NO se usa el cuit 20409378472
@@ -43,7 +46,7 @@ AFIP_CERT_PATH=./afip-keys/cert.crt
 | Variable | Descripcion |
 |---|---|
 | `AFIP_CUIT` | CUIT del contribuyente emisor |
-| `AFIP_ACCESS_TOKEN` | Access token de Afip SDK |
+| `AFIP_TOKEN` | Access token de Afip SDK |
 | `AFIP_CERT_PATH` | Ruta al certificado de AFIP |
 | `AFIP_KEY_PATH` | Ruta a la clave privada de AFIP |
 
@@ -94,4 +97,4 @@ La respuesta incluye la URL del PDF generado.
 - [Java](https://www.java.com/) - Runtime y servidor HTTP embebido
 - [Afip SDK Java](https://central.sonatype.com/artifact/com.afipsdk/afip-sdk-java) - Libreria Java de AfipSDK para web services de AFIP
 - [Gson](https://github.com/google/gson) - Serializacion JSON
-- Variables de entorno o archivo `.env` para configuracion local
+- Variables de entorno para configuracion local
