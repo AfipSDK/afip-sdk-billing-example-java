@@ -36,9 +36,6 @@ AFIP_CUIT=20409378472
 # Agregar estos envs si NO se usa el cuit 20409378472
 AFIP_KEY_PATH=./afip-keys/key.key
 AFIP_CERT_PATH=./afip-keys/cert.crt
-
-# Opcional: usar ambiente productivo
-AFIP_PRODUCTION=false
 ```
 
 | Variable | Descripcion |
@@ -47,7 +44,6 @@ AFIP_PRODUCTION=false
 | `AFIP_ACCESS_TOKEN` | Access token de Afip SDK |
 | `AFIP_CERT_PATH` | Ruta al certificado de AFIP |
 | `AFIP_KEY_PATH` | Ruta a la clave privada de AFIP |
-| `AFIP_PRODUCTION` | Opcional. Usar `true` para ambiente productivo |
 
 ## Uso
 
